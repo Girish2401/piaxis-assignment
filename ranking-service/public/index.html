@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>PiAxis Detail Search</title>
+  <style>
+    body { font-family: sans-serif; max-width: 700px; margin: 40px auto; padding: 0 20px; }
+    input, select { width: 100%; padding: 8px; margin: 6px 0 14px; box-sizing: border-box; }
+    button { padding: 10px 24px; background: #2563eb; color: white; border: none; cursor: pointer; border-radius: 4px; }
+    button:hover { background: #1d4ed8; }
+    .result { border: 1px solid #ddd; border-radius: 6px; padding: 14px; margin: 10px 0; }
+    .score { font-weight: bold; color: #2563eb; }
+    .explanation { color: #555; font-size: 0.9em; margin-top: 6px; }
+    .error { color: red; }
+    .correction-banner { background: #f0f7ff; border: 1px solid #bfdbfe; border-radius: 6px; padding: 12px 16px; margin: 14px 0 6px; }
+    .correction-banner .searched-for { color: #1e40af; font-weight: bold; }
+    .correction-banner .original-query { color: #6b7280; font-size: 0.9em; margin-top: 4px; }
+    .correction-banner .original-query a { color: #2563eb; cursor: pointer; text-decoration: underline; }
+  </style>
+</head>
+<body>
+  <h2>PiAxis Architectural Detail Search</h2>
+
+  <label>Search Query</label>
+  <input type="text" id="query" placeholder="e.g. window drip, waterproofing slab" />
+
+  <label>Host Element</label>
+  <select id="host_element">
+    <option value="">-- Any --</option>
+    <option>External Wall</option>
+    <option>Window</option>
+    <option>Internal Wall</option>
+  </select>
+
+  <label>Adjacent Element</label>
+  <select id="adjacent_element">
+    <option value="">-- Any --</option>
+    <option>Slab</option>
+    <option>External Wall</option>
+    <option>Floor</option>
+  </select>
+
+  <label>Exposure</label>
+  <select id="exposure">
+    <option value="">-- Any --</option>
+    <option>External</option>
+    <option>Internal</option>
+  </select>
+
+  <button onclick="doSearch()">Search</button>
+
+  <div id="results"></div>
+
+  <script>
+    function searchExact(originalQuery) {
+      const words = originalQuery.split(/\s+/).filter(Boolean);
+      const quoted = words.map(w => `"${w}"`).join(" ");
+      document.getElementById("query").value = quoted;
+      doSearch();
+    }
+
+    async function doSearch() {
+      const query            = document.getElementById("query").value.trim();
+      const host_element     = document.getElementById("host_element").value;
+      const adjacent_element = document.getElementById("adjacent_element").value;
+      const exposure         = document.getElementById("exposure").value;
+
+      if (!query && !host_element && !adjacent_element && !exposure) {
+        document.getElementById("results").innerHTML =
+          '<p class="error">Please enter a query or select at least one context field.</p>';
+        return;
+      }
+
+      const body = {};
+      if (query)            body.query            = query;
+      if (host_element)     body.host_element     = host_element;
+      if (adjacent_element) body.adjacent_element = adjacent_element;
+      if (exposure)         body.exposure         = exposure;
+
+      try {
+        const res  = await fetch("/search", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body)
+        });
+        const data = await res.json();
+
+        if (!res.ok) {
+          document.getElementById("results").innerHTML =
+            `<p class="error">${data.error}</p>`;
+          return;
+        }
+
+        if (data.results.length === 0) {
+          document.getElementById("results").innerHTML = "<p>No results found.</p>";
+          return;
+        }
+
+        let html = "";
+
+        if (data.searched_for && data.corrections) {
+          const originalQuery = document.getElementById("query").value.trim();
+          html += `
+            <div class="correction-banner">
+              <div class="searched-for">Showing results for: ${data.searched_for}</div>
+              <div class="original-query">Search instead for: <a onclick="searchExact('${originalQuery.replace(/'/g, "\\'")}')">${originalQuery}</a></div>
+            </div>`;
+        }
+
+        html += data.results.map(r => `
+          <div class="result">
+            <strong>${r.title}</strong>
+            <div class="score">Score: ${r.score}</div>
+            <div class="explanation">${r.explanation}</div>
+          </div>
+        `).join("");
+
+        document.getElementById("results").innerHTML = html;
+      } catch (err) {
+        document.getElementById("results").innerHTML =
+          '<p class="error">Something went wrong. Is the server running?</p>';
+      }
+    }
+  </script>
+</body>
+</html>
